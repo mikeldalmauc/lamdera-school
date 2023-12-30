@@ -3,22 +3,21 @@ module Cuestionario exposing (..)
 
 import Browser.Dom exposing (Element)
 
-import Element as El exposing (Element, el, text, row, alignRight, fill, width, rgb255, spacing, centerY, padding, column, row)
+import Element as El exposing (Element, el, text, row, width, height, spacing, centerY, padding, column, row)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element exposing (centerX)
 import Dict exposing (Dict)
 import Debug exposing (toString)
-import Element exposing (explain)
 import Element exposing (paddingXY)
 import Element.Input as Input
 
 import Style exposing (..)
 
 import Html.Attributes as HAttrs
-import Lamdera exposing (Document)
-import Element exposing (alignLeft)
+import Html exposing (col)
+import Element.Font exposing (justify)
 
 type alias Preguntas = Dict Int Pregunta
 
@@ -52,8 +51,6 @@ init =
     ,   preguntas = Dict.fromList 
             <| List.indexedMap (\index pregunta -> (index + 1, pregunta))
                 [
-                --     { pregunta = "¿Qué protocolos se utilizan en la capa de Transporte del modelo OSI?", respuestas = ["TCP y UDP", "FTP y SSH", "HTTP y DNS"], respuesta = Nothing }
-                -- ,   { pregunta = "¿Cuál es la capital de España?", respuestas = ["Madrid", "Barcelona", "Valencia"], respuesta = Nothing }
                 ]
                 ++ (List.range 1 120 |> List.map (\index -> (index, { pregunta = "Pregunta " ++ toString index, respuestas = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
     }, Cmd.none )
@@ -134,20 +131,17 @@ view model =
         sliderView =  viewSlider model
         
     in
-        column [centerY, centerX, spacing 30 
-        -- , explain Debug.todo
-        ] <| 
-            [ preguntaView, sliderView]
+        column [centerY, centerX, spacing 30] 
+            <| [ preguntaView, sliderView]
 
 
 viewPregunta : Int -> Pregunta -> Element Msg
 viewPregunta idPregunta pregunta =
     el [centerY, centerX] 
-        <| column [spacing 10
-            -- , explain Debug.todo
-            ] 
-            <| (el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.pregunta)) 
-            :: [viewRespuestas pregunta.respuesta pregunta.respuestas]
+        <| column [spacing 10] 
+            <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.pregunta)) 
+                , viewRespuestas pregunta.respuesta pregunta.respuestas
+                ]
             
 
 viewRespuestas : Maybe Int -> List String -> Element Msg
@@ -208,18 +202,23 @@ viewSlider model =
         
         estiloMarcador = \index -> 
                 (if index == model.idPreguntaActual then [Background.color blueColor] else [Background.color gray80])
-            ++  (if tieneRespuesta index model.preguntas then [Font.color greenColor] else [])
+            -- ++  (if tieneRespuesta index model.preguntas then [Font.color greenColor] else [])
             ++  [Border.width 0, Border.color gray5, Border.rounded 3]
             ++  [Font.size 10, Font.bold, Font.center]
             ++  [width <| El.px 23]
             ++  buttonStyle
+
+        label = \index -> 
+            column [Font.center, centerY, centerX, spacing 3] [el [centerX] <| text <| toString index
+                , el [Border.rounded 2, width <| El.px 12, height <| El.px 3
+                    , Background.color (if tieneRespuesta index model.preguntas then greenColor else gray90)] El.none]
 
         indices = 
             List.map (\index -> 
                 Input.button
                     (estiloMarcador index) 
                     { onPress = Just <| SaltarAPregunta index
-                    , label = text <| toString index
+                    , label = label index
                     })    
             <| List.range firstIndex lastIndex
 
