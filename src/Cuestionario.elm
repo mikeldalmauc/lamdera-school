@@ -18,6 +18,7 @@ import Style exposing (..)
 import Html.Attributes as HAttrs
 import Html exposing (col)
 import Element.Font exposing (justify)
+import Html exposing (pre)
 
 type alias Preguntas = Dict Int Pregunta
 
@@ -27,12 +28,20 @@ type alias Model = {
         preguntas: Preguntas
     }
 
-type alias Pregunta = { 
+type alias PreguntaRespuestaUnica = { 
         pregunta: String, 
-        respuestas: List String, 
+        opcionesResp: List String, 
         respuesta: Maybe Int
     }
 
+type alias PreguntaMultiRespuesta = {
+        pregunta: String, 
+        opcionesResp: List String, 
+        respuestas: Maybe (List Int)
+    }
+
+type Pregunta = PreguntaMR PreguntaMultiRespuesta
+    | PreguntaRU PreguntaRespuestaUnica
 
 type Msg = NoOp
     | EligeRespuesta Int
@@ -46,13 +55,14 @@ type Msg = NoOp
 init : ( Model, Cmd Msg )
 init =
     ( { 
-        idPreguntaActual = 1
-    ,   preguntaActual = { pregunta = "Pregunta " ++ toString 1, respuestas = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing }
+        idPreguntaActual = 2
+    ,   preguntaActual = PreguntaRU { pregunta = "Pregunta " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing }
     ,   preguntas = Dict.fromList 
             <| List.indexedMap (\index pregunta -> (index + 1, pregunta))
                 [
+                    PreguntaMR { pregunta = "Pregunta Multi " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing }
                 ]
-                ++ (List.range 1 120 |> List.map (\index -> (index, { pregunta = "Pregunta " ++ toString index, respuestas = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
+                ++ (List.range 2 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
     }, Cmd.none )
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -63,15 +73,10 @@ update msg model =
 
         EligeRespuesta idRespuesta ->
             let
-                preguntaAct = 
-                    if (Just idRespuesta) == model.preguntaActual.respuesta then
-                        let preg = model.preguntaActual in { preg  | respuesta = Nothing } 
-                    else
-                        let preg = model.preguntaActual in { preg  | respuesta = Just idRespuesta } 
-
-                preguntasDict = Dict.insert model.idPreguntaActual preguntaAct model.preguntas
+                preguntaActualUpdated = marcarRespuesta idRespuesta model.preguntaActual 
+                preguntasDict = Dict.insert model.idPreguntaActual preguntaActualUpdated model.preguntas
             in
-            ( { model | preguntas = preguntasDict, preguntaActual = preguntaAct }, Cmd.none )
+            ( { model | preguntas = preguntasDict, preguntaActual = preguntaActualUpdated }, Cmd.none )
 
 
         SaltarAPregunta id -> 
@@ -124,6 +129,61 @@ update msg model =
                     Nothing ->
                         ( model, Cmd.none )
 
+
+marcarRespuesta :Int ->  Pregunta ->  Pregunta
+marcarRespuesta idRespuesta pregunta = 
+    case pregunta of 
+        PreguntaRU p -> 
+            case p.respuesta of
+                Just _ -> PreguntaRU { p  | respuesta = Nothing } 
+                Nothing -> PreguntaRU { p  | respuesta = Just idRespuesta }
+
+        PreguntaMR p -> 
+            case p.respuestas of
+                Just idrs -> 
+                    if List.member idRespuesta idrs then 
+                        let
+                            idrsSin = List.filter (\id -> id /= idRespuesta) idrs
+                        in
+                            if List.length idrsSin == 0 then
+                                PreguntaMR { p  | respuestas = Nothing } 
+                            else
+                                PreguntaMR { p  | respuestas = Just idrsSin } 
+                    else 
+                        PreguntaMR { p  | respuestas = Just (idRespuesta :: idrs) } 
+                    
+                Nothing -> PreguntaMR {p | respuestas = Just [idRespuesta]}
+    
+    --  let
+    --     preguntaAct = 
+    --         if (Just idRespuesta) == model.preguntaActual.respuesta then
+    --             let preg = model.preguntaActual in { preg  | respuesta = Nothing } 
+    --         else
+    --             let preg = model.preguntaActual in { preg  | respuesta = Just idRespuesta } 
+
+
+tieneRespuesta : Int -> Preguntas -> Bool
+tieneRespuesta id preguntas =
+    case Dict.get id preguntas of
+        Just pregunta ->
+            case pregunta of 
+                PreguntaRU p -> 
+                    case p.respuesta of
+                        Just _ ->
+                            True
+                        Nothing ->
+                            False
+
+                PreguntaMR p -> 
+                    case p.respuestas of
+                        Just _ ->
+                            True
+                        Nothing ->
+                            False
+        Nothing ->
+            False
+            
+
 view : Model -> Element Msg
 view model =
     let
@@ -137,15 +197,24 @@ view model =
 
 viewPregunta : Int -> Pregunta -> Element Msg
 viewPregunta idPregunta pregunta =
+    case pregunta of 
+        PreguntaRU p -> 
+            viewPreguntaRespuestaUnica idPregunta p
+            
+        PreguntaMR p -> 
+            viewPreguntaMultiRespuesta idPregunta p
+            
+
+viewPreguntaRespuestaUnica : Int -> PreguntaRespuestaUnica -> Element Msg
+viewPreguntaRespuestaUnica idPregunta pregunta =
     el [centerY, centerX] 
         <| column [spacing 10] 
             <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.pregunta)) 
-                , viewRespuestas pregunta.respuesta pregunta.respuestas
+                , viewRespuestasRU pregunta.respuesta pregunta.opcionesResp
                 ]
-            
 
-viewRespuestas : Maybe Int -> List String -> Element Msg
-viewRespuestas selected respuestas =
+viewRespuestasRU : Maybe Int -> List String -> Element Msg
+viewRespuestasRU selected respuestas =
     Input.radio
         [ paddingXY 40 5
         , spacing 20
@@ -160,6 +229,32 @@ viewRespuestas selected respuestas =
             ) respuestas
         }
         
+viewPreguntaMultiRespuesta :  Int -> PreguntaMultiRespuesta -> Element Msg
+viewPreguntaMultiRespuesta idPregunta pregunta  =
+    el [centerY, centerX] 
+        <| column [spacing 10] 
+            <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.pregunta)) 
+                , viewRespuestasMulti pregunta.respuestas pregunta.opcionesResp
+                ]
+
+viewRespuestasMulti : Maybe (List Int) -> List String -> Element Msg
+viewRespuestasMulti selected opcionesResp =
+    let
+        selectedResps = case selected of
+                Just ids -> ids
+                Nothing -> [] 
+    in
+        column [ spacing 11]
+            <|  List.indexedMap (\index respuesta -> 
+                    Input.checkbox [paddingXY 40 5]
+                        { onChange = \b -> EligeRespuesta index
+                        , icon = Input.defaultCheckbox
+                        , checked = List.member index selectedResps
+                        , label = Input.labelRight [paddingXY 5 0] (text respuesta)
+                        }
+                    ) opcionesResp
+
+
 viewSlider : Model -> Element Msg
 viewSlider model =
     let
@@ -170,7 +265,7 @@ viewSlider model =
                 padding 8
             , width <| El.px 28
             , El.pointer
-            , El.mouseOver [Font.glow blueColor 0.4, Font.color darkBlueColor] ]
+            , El.mouseOver [Font.color darkBlueColor] ]
 
         anterior = Input.button
             arrowStyle
@@ -210,7 +305,7 @@ viewSlider model =
 
         label = \index -> 
             column [Font.center, centerY, centerX, spacing 3] [el [centerX] <| text <| toString index
-                , el [Border.rounded 2, width <| El.px 12, height <| El.px 3
+                , el [centerX, Border.rounded 2, width <| El.px 12, height <| El.px 3
                     , Background.color (if tieneRespuesta index model.preguntas then greenColor else gray90)] El.none]
 
         indices = 
@@ -239,15 +334,3 @@ surroundingIndices dictSize currentIndex =
                 (1, 5)
             else 
                (currentIndex - 2, currentIndex + 2)
-
-tieneRespuesta : Int -> Preguntas -> Bool
-tieneRespuesta id preguntas =
-    case Dict.get id preguntas of
-        Just pregunta ->
-            case pregunta.respuesta of
-                Just _ ->
-                    True
-                Nothing ->
-                    False
-        Nothing ->
-            False
