@@ -40,11 +40,24 @@ type alias PreguntaMultiRespuesta = {
         respuestas: Maybe (List Int)
     }
 
+type alias PreguntaMultiRespuestaLibre = {
+        titulo: String,
+        parrafo: List PreguntaMRL
+    }
+
+type PreguntaMRL = 
+      Texto String
+    | HuecoRespuesta (Maybe String)
+
 type Pregunta = PreguntaMR PreguntaMultiRespuesta
     | PreguntaRU PreguntaRespuestaUnica
+    | PreguntaMRL PreguntaMultiRespuestaLibre
+
 
 type Msg = NoOp
     | EligeRespuesta Int
+    | RellenaRespuesta Int String
+
     | SaltarAPregunta Int
     | SiguientePregunta
     | AnteriorPregunta
@@ -55,14 +68,15 @@ type Msg = NoOp
 init : ( Model, Cmd Msg )
 init =
     ( { 
-        idPreguntaActual = 2
+        idPreguntaActual = 3
     ,   preguntaActual = PreguntaRU { pregunta = "Pregunta " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing }
     ,   preguntas = Dict.fromList 
             <| List.indexedMap (\index pregunta -> (index + 1, pregunta))
                 [
                     PreguntaMR { pregunta = "Pregunta Multi " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing }
+                ,   PreguntaMRL { titulo = "Completa el texto" , parrafo = [Texto "Pregunta MRsL 1 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 2 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 3 ", HuecoRespuesta Nothing]}
                 ]
-                ++ (List.range 2 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
+                ++ (List.range 3 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
     }, Cmd.none )
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -70,6 +84,33 @@ update msg model =
     case msg of
         NoOp ->
             ( model, Cmd.none )
+
+        RellenaRespuesta id respuesta -> 
+            let
+                preguntaActualUpdated = case model.preguntaActual of 
+                    PreguntaMRL p -> 
+                        let
+                            pUpdated = List.indexedMap (\index section -> 
+                                case section of 
+                                    HuecoRespuesta _ -> 
+                                        if index == id then 
+                                            if String.isEmpty respuesta then 
+                                                HuecoRespuesta Nothing
+                                            else
+                                                HuecoRespuesta <| Just respuesta
+                                        else 
+                                            section
+                                    _ -> 
+                                        section
+                                ) p.parrafo
+                        in
+                            PreguntaMRL {p | parrafo = pUpdated}
+                    _ -> 
+                        model.preguntaActual
+                preguntasDict = Dict.insert model.idPreguntaActual preguntaActualUpdated model.preguntas
+            in
+            ( { model | preguntas = preguntasDict, preguntaActual = preguntaActualUpdated }, Cmd.none )
+            
 
         EligeRespuesta idRespuesta ->
             let
@@ -130,7 +171,7 @@ update msg model =
                         ( model, Cmd.none )
 
 
-marcarRespuesta :Int ->  Pregunta ->  Pregunta
+marcarRespuesta : Int ->  Pregunta ->  Pregunta
 marcarRespuesta idRespuesta pregunta = 
     case pregunta of 
         PreguntaRU p -> 
@@ -153,14 +194,9 @@ marcarRespuesta idRespuesta pregunta =
                         PreguntaMR { p  | respuestas = Just (idRespuesta :: idrs) } 
                     
                 Nothing -> PreguntaMR {p | respuestas = Just [idRespuesta]}
-    
-    --  let
-    --     preguntaAct = 
-    --         if (Just idRespuesta) == model.preguntaActual.respuesta then
-    --             let preg = model.preguntaActual in { preg  | respuesta = Nothing } 
-    --         else
-    --             let preg = model.preguntaActual in { preg  | respuesta = Just idRespuesta } 
 
+        _ -> 
+            pregunta
 
 tieneRespuesta : Int -> Preguntas -> Bool
 tieneRespuesta id preguntas =
@@ -180,6 +216,20 @@ tieneRespuesta id preguntas =
                             True
                         Nothing ->
                             False
+                
+                PreguntaMRL p ->
+                    List.any (\section -> 
+                        case section of 
+                            HuecoRespuesta res -> 
+                                case res of
+                                    Just _ -> 
+                                        True
+                                    Nothing -> 
+                                        False
+                            _ -> 
+                                False
+                        ) p.parrafo
+
         Nothing ->
             False
             
@@ -204,6 +254,8 @@ viewPregunta idPregunta pregunta =
         PreguntaMR p -> 
             viewPreguntaMultiRespuesta idPregunta p
             
+        PreguntaMRL p -> 
+           viewPreguntaMultiRespuestaLibre idPregunta p
 
 viewPreguntaRespuestaUnica : Int -> PreguntaRespuestaUnica -> Element Msg
 viewPreguntaRespuestaUnica idPregunta pregunta =
@@ -253,6 +305,33 @@ viewRespuestasMulti selected opcionesResp =
                         , label = Input.labelRight [paddingXY 5 0] (text respuesta)
                         }
                     ) opcionesResp
+
+viewPreguntaMultiRespuestaLibre : Int -> PreguntaMultiRespuestaLibre -> Element Msg
+viewPreguntaMultiRespuestaLibre idPregunta pregunta =
+    el [centerY, centerX] 
+        <| column [spacing 10] 
+            <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.titulo)) 
+                , viewRespuestasMRL pregunta
+                ]
+                
+viewRespuestasMRL : PreguntaMultiRespuestaLibre -> Element Msg
+viewRespuestasMRL pregunta = 
+    El.paragraph [] <| 
+        List.indexedMap (\ index section -> 
+            case section of 
+                Texto t -> 
+                    text t
+                HuecoRespuesta respuesta -> 
+                    Input.text [paddingXY 5 5, Font.color gray90]   
+                        { onChange = \s -> RellenaRespuesta index s
+                        , text = case respuesta of 
+                            Just res -> res
+                            Nothing -> ""
+                        , placeholder = Nothing
+                        , label = Input.labelHidden <| "Respuesta" ++ (toString index)
+                        }
+            ) pregunta.parrafo
+
 
 
 viewSlider : Model -> Element Msg
