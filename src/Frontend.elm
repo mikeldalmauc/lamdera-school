@@ -22,7 +22,7 @@ app =
         , onUrlChange = UrlChanged
         , update = update
         , updateFromBackend = updateFromBackend
-        , subscriptions = \m -> Sub.none
+        , subscriptions = subscriptions
         , view = view
         }
 
@@ -35,6 +35,13 @@ init url key =
       }
     , Cmd.none
     )
+
+
+-- SUBSCRIPTIONS
+
+subscriptions : Model -> Sub FrontendMsg
+subscriptions model =
+    Sub.map CuestionarioMsg (Cuestionario.subscriptions model.cuestionario)
 
 
 update : FrontendMsg -> Model -> ( Model, Cmd FrontendMsg )

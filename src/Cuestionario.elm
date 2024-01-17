@@ -19,13 +19,18 @@ import Html.Attributes as HAttrs
 import Html exposing (col)
 import Element.Font exposing (justify)
 import Html exposing (pre)
+import DnDList
+import Element exposing (none)
+import Element exposing (moveLeft)
+import Element exposing (moveRight)
 
 type alias Preguntas = Dict Int Pregunta
 
 type alias Model = {
         idPreguntaActual: Int,
         preguntaActual: Pregunta,
-        preguntas: Preguntas
+        preguntas: Preguntas,
+        dnd: DnDList.Model
     }
 
 type alias PreguntaRespuestaUnica = { 
@@ -45,6 +50,15 @@ type alias PreguntaMultiRespuestaLibre = {
         parrafo: List PreguntaMRL
     }
 
+type alias PreguntaDragAndDrop = {
+        titulo: String,
+        preguntas: List String,
+        respuestas: Maybe (List (Int, Int)),
+        opcionesResp: List String
+    }
+
+
+
 type PreguntaMRL = 
       Texto String
     | HuecoRespuesta (Maybe String)
@@ -52,6 +66,7 @@ type PreguntaMRL =
 type Pregunta = PreguntaMR PreguntaMultiRespuesta
     | PreguntaRU PreguntaRespuestaUnica
     | PreguntaMRL PreguntaMultiRespuestaLibre
+    | PreguntaDND PreguntaDragAndDrop
 
 
 type Msg = NoOp
@@ -63,21 +78,53 @@ type Msg = NoOp
     | AnteriorPregunta
     | PrimeraPregunta
     | UltimaPregunta
+    | DragAndDropMsg DnDList.Msg
 
 
 init : ( Model, Cmd Msg )
 init =
     ( { 
-        idPreguntaActual = 3
+        idPreguntaActual = 4
     ,   preguntaActual = PreguntaRU { pregunta = "Pregunta " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing }
     ,   preguntas = Dict.fromList 
             <| List.indexedMap (\index pregunta -> (index + 1, pregunta))
                 [
                     PreguntaMR { pregunta = "Pregunta Multi " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing }
                 ,   PreguntaMRL { titulo = "Completa el texto" , parrafo = [Texto "Pregunta MRsL 1 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 2 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 3 ", HuecoRespuesta Nothing]}
+                ,   PreguntaDND { titulo = "Arrastra las opciones a su lugar correcto", preguntas = ["Pregunta 1ssssssss", "Pregunta 2", "Pregunta 3"], opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing}
                 ]
-                ++ (List.range 3 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
+                ++ (List.range 4 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
+    ,   dnd = system.model
     }, Cmd.none )
+
+
+-- SYSTEM
+
+
+config : DnDList.Config String
+config =
+    { beforeUpdate = \_ _ list -> list
+    , movement = DnDList.Free
+    , listen = DnDList.OnDrag
+    , operation = DnDList.Swap
+    }
+
+
+system : DnDList.System String Msg
+system =
+    DnDList.create config DragAndDropMsg
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    system.subscriptions model.dnd
+
+
+--- UPDATE
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -119,6 +166,20 @@ update msg model =
             in
             ( { model | preguntas = preguntasDict, preguntaActual = preguntaActualUpdated }, Cmd.none )
 
+        DragAndDropMsg dndMsg ->
+            case model.preguntaActual of 
+                PreguntaDND preguntaDnD -> 
+                    let
+                        ( dnd, respuestasActualizadas ) =
+                            system.update dndMsg model.dnd preguntaDnD.opcionesResp
+                        preguntaActualUpdated = PreguntaDND { preguntaDnD | opcionesResp = respuestasActualizadas } 
+
+                        preguntasDict = Dict.insert model.idPreguntaActual preguntaActualUpdated model.preguntas
+                    in
+                    ( { model | dnd = dnd, preguntas = preguntasDict, preguntaActual = preguntaActualUpdated } , system.commands dnd )
+
+                _ -> 
+                    ( model, Cmd.none )
 
         SaltarAPregunta id -> 
             let
@@ -141,7 +202,7 @@ update msg model =
                         ( model, Cmd.none )    
                         
         AnteriorPregunta ->
-             let
+            let
                 preguntaAct = Dict.get (model.idPreguntaActual  - 1) model.preguntas
             in
                 case preguntaAct of
@@ -176,7 +237,11 @@ marcarRespuesta idRespuesta pregunta =
     case pregunta of 
         PreguntaRU p -> 
             case p.respuesta of
-                Just _ -> PreguntaRU { p  | respuesta = Nothing } 
+                Just resp -> 
+                    if resp == idRespuesta then 
+                        PreguntaRU { p  | respuesta = Nothing } 
+                    else 
+                        PreguntaRU { p  | respuesta = Just idRespuesta }
                 Nothing -> PreguntaRU { p  | respuesta = Just idRespuesta }
 
         PreguntaMR p -> 
@@ -197,6 +262,7 @@ marcarRespuesta idRespuesta pregunta =
 
         _ -> 
             pregunta
+
 
 tieneRespuesta : Int -> Preguntas -> Bool
 tieneRespuesta id preguntas =
@@ -230,14 +296,24 @@ tieneRespuesta id preguntas =
                                 False
                         ) p.parrafo
 
+                PreguntaDND p ->
+                    case p.respuestas of
+                        Just _ ->
+                            True
+                        Nothing ->
+                            False
         Nothing ->
             False
             
 
+
+-- VIEW
+
+
 view : Model -> Element Msg
 view model =
     let
-        preguntaView = viewPregunta model.idPreguntaActual model.preguntaActual
+        preguntaView = viewPregunta model.idPreguntaActual model.preguntaActual model.dnd
         sliderView =  viewSlider model
         
     in
@@ -245,8 +321,8 @@ view model =
             <| [ preguntaView, sliderView]
 
 
-viewPregunta : Int -> Pregunta -> Element Msg
-viewPregunta idPregunta pregunta =
+viewPregunta : Int -> Pregunta -> DnDList.Model -> Element Msg
+viewPregunta idPregunta pregunta dnd =
     case pregunta of 
         PreguntaRU p -> 
             viewPreguntaRespuestaUnica idPregunta p
@@ -256,6 +332,10 @@ viewPregunta idPregunta pregunta =
             
         PreguntaMRL p -> 
            viewPreguntaMultiRespuestaLibre idPregunta p
+
+        PreguntaDND p -> 
+            viewPreguntaDragAndDrop idPregunta p dnd
+
 
 viewPreguntaRespuestaUnica : Int -> PreguntaRespuestaUnica -> Element Msg
 viewPreguntaRespuestaUnica idPregunta pregunta =
@@ -333,6 +413,103 @@ viewRespuestasMRL pregunta =
             ) pregunta.parrafo
 
 
+viewPreguntaDragAndDrop : Int -> PreguntaDragAndDrop -> DnDList.Model ->  Element Msg
+viewPreguntaDragAndDrop idPregunta pregunta dnd =
+    el [centerY, centerX] 
+        <| column [spacing 10] 
+            <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.titulo)) 
+                , viewRespuestaDragAndDrop pregunta dnd
+                ]
+
+
+viewRespuestaDragAndDrop : PreguntaDragAndDrop -> DnDList.Model -> Element Msg 
+viewRespuestaDragAndDrop pregunta dnd = 
+    column [paddingXY 30 5, spacing 10] 
+        <| List.indexedMap (\index p -> 
+                row [paddingXY 5 5] [text p
+                ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
+                        Just match ->  
+                            el [paddingXY 10 5] <| itemView dnd index match
+                        Nothing ->
+                            viewShadowPlaceholder
+                ]
+            ) pregunta.preguntas
+        ++ (sinMatchear pregunta.respuestas pregunta.opcionesResp
+            |> List.indexedMap (\index opcion -> 
+                row [paddingXY 5 5] [itemView dnd index opcion
+                ]
+            ))
+
+
+itemView : DnDList.Model -> Int -> String -> Element Msg 
+itemView dnd index item =
+    let
+        itemId : String
+        itemId =
+            "id-" ++ item
+    in
+    case system.info dnd of
+        Just { dragIndex } ->
+            if dragIndex /= index then
+               Element.el
+                    (Element.Font.color (Element.rgb 1 1 1)
+                        :: Element.htmlAttribute (HAttrs.id itemId)
+                        :: List.map Element.htmlAttribute (system.dropEvents index itemId)
+                    )
+                    (Element.text item)
+
+            else
+                viewShadowPlaceholder
+
+        Nothing ->
+            Element.el
+                    (Element.Font.color (Element.rgb 1 1 1)
+                        :: Element.htmlAttribute (HAttrs.id itemId)
+                        :: List.map Element.htmlAttribute (system.dropEvents index itemId)
+                    )
+                    (Element.text item)
+
+viewShadowPlaceholder : Element msg
+viewShadowPlaceholder =
+    el [moveRight 4
+    , paddingXY 0 10
+    , width <| El.px 300
+    , Border.color gray80
+    , Border.solid
+    , Border.width 2
+    , Border.rounded 2
+    ] <| none    
+
+
+obtenerMatch : Int -> Maybe (List (Int, Int)) -> List String -> Maybe String
+obtenerMatch idPregunta respuestas opcionesResp =  
+    case respuestas of 
+        Just respuestasList -> 
+            case List.filter (\(id, _) -> id == idPregunta) respuestasList of 
+                [(id, idRespuesta)] -> 
+                    Just <| String.join "" <| List.indexedMap (\index respuesta -> 
+                        if index == idRespuesta then 
+                            respuesta
+                        else 
+                            ""
+                        ) opcionesResp
+                _ -> 
+                    Nothing
+        Nothing -> 
+            Nothing
+
+sinMatchear : Maybe (List (Int, Int)) -> List String -> List String
+sinMatchear respuestas opcionesResp =  
+    case respuestas of 
+        Just respuestasList -> 
+                List.map (\(_, res) -> res )
+                <| List.filter (\(index, _) -> 
+                        not (List.any (\(_, idResp) -> idResp == index) respuestasList)
+                    ) 
+                <| List.indexedMap (\id res -> (id, res)) opcionesResp
+        Nothing -> 
+            opcionesResp
+
 
 viewSlider : Model -> Element Msg
 viewSlider model =
@@ -375,12 +552,12 @@ viewSlider model =
         (firstIndex, lastIndex) = surroundingIndices dictSize model.idPreguntaActual
         
         estiloMarcador = \index -> 
-                (if index == model.idPreguntaActual then [Background.color blueColor] else [Background.color gray80])
-            -- ++  (if tieneRespuesta index model.preguntas then [Font.color greenColor] else [])
-            ++  [Border.width 0, Border.color gray5, Border.rounded 3]
-            ++  [Font.size 10, Font.bold, Font.center]
-            ++  [width <| El.px 23]
-            ++  buttonStyle
+                    (if index == model.idPreguntaActual then [Background.color blueColor] else [Background.color gray80])
+                ++
+                [ Border.width 0, Border.color gray5, Border.rounded 3
+                , Font.size 10, Font.bold, Font.center
+                , width <| El.px 23
+                ] ++ buttonStyle
 
         label = \index -> 
             column [Font.center, centerY, centerX, spacing 3] [el [centerX] <| text <| toString index
