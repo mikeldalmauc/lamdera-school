@@ -20,9 +20,12 @@ import Html exposing (col)
 import Element.Font exposing (justify)
 import Html exposing (pre)
 import DnDList
+import DnDList.Groups
+
 import Element exposing (none)
 import Element exposing (moveLeft)
 import Element exposing (moveRight)
+import List exposing (indexedMap)
 
 type alias Preguntas = Dict Int Pregunta
 
@@ -30,7 +33,7 @@ type alias Model = {
         idPreguntaActual: Int,
         preguntaActual: Pregunta,
         preguntas: Preguntas,
-        dnd: DnDList.Model
+        dnd: DnDList.Groups.Model
     }
 
 type alias PreguntaRespuestaUnica = { 
@@ -53,10 +56,20 @@ type alias PreguntaMultiRespuestaLibre = {
 type alias PreguntaDragAndDrop = {
         titulo: String,
         preguntas: List String,
-        respuestas: Maybe (List (Int, Int)),
-        opcionesResp: List String
+        respuestas: List Item
     }
 
+type Group
+    = NoAsignada
+    | Asignada
+    | Empty
+
+
+type alias Item =
+    { group : Group
+    , value : String
+    , color : String
+    }
 
 
 type PreguntaMRL = 
@@ -78,7 +91,7 @@ type Msg = NoOp
     | AnteriorPregunta
     | PrimeraPregunta
     | UltimaPregunta
-    | DragAndDropMsg DnDList.Msg
+    | DragAndDropMsg DnDList.Groups.Msg
 
 
 init : ( Model, Cmd Msg )
@@ -91,28 +104,48 @@ init =
                 [
                     PreguntaMR { pregunta = "Pregunta Multi " ++ toString 1, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing }
                 ,   PreguntaMRL { titulo = "Completa el texto" , parrafo = [Texto "Pregunta MRsL 1 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 2 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 3 ", HuecoRespuesta Nothing]}
-                ,   PreguntaDND { titulo = "Arrastra las opciones a su lugar correcto", preguntas = ["Pregunta 1ssssssss", "Pregunta 2", "Pregunta 3"], opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuestas = Nothing}
+                ,   PreguntaDND { titulo = "Arrastra las opciones a su lugar correcto", preguntas = ["El pez es ", "El pajaro ", "El oso "], 
+                        respuestas = [
+                          Item Empty ""  gray
+                        , Item Empty "" gray
+                        , Item Empty "" gray
+                        , Item NoAsignada "de color rojo." red
+                        , Item NoAsignada "vuela." red
+                        , Item NoAsignada "come miel." red]}
                 ]
                 ++ (List.range 4 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
     ,   dnd = system.model
     }, Cmd.none )
 
 
--- SYSTEM
+-- SYSTEM DND
 
-
-config : DnDList.Config String
+config : DnDList.Groups.Config Item
 config =
     { beforeUpdate = \_ _ list -> list
-    , movement = DnDList.Free
-    , listen = DnDList.OnDrag
-    , operation = DnDList.Swap
+    , listen = DnDList.Groups.OnDrag
+    , operation = DnDList.Groups.Unaltered
+    , groups =
+        { listen = DnDList.Groups.OnDrag
+        , operation = DnDList.Groups.Swap
+        , comparator = comparator
+        , setter = setter
+        }
     }
 
 
-system : DnDList.System String Msg
+system : DnDList.Groups.System Item Msg
 system =
-    DnDList.create config DragAndDropMsg
+    DnDList.Groups.create config DragAndDropMsg
+
+comparator : Item -> Item -> Bool
+comparator item1 item2 =
+    item1.group == item2.group
+
+
+setter : Item -> Item -> Item
+setter item1 item2 =
+    { item2 | group = item1.group }
 
 
 -- SUBSCRIPTIONS
@@ -171,8 +204,8 @@ update msg model =
                 PreguntaDND preguntaDnD -> 
                     let
                         ( dnd, respuestasActualizadas ) =
-                            system.update dndMsg model.dnd preguntaDnD.opcionesResp
-                        preguntaActualUpdated = PreguntaDND { preguntaDnD | opcionesResp = respuestasActualizadas } 
+                            system.update dndMsg model.dnd preguntaDnD.respuestas
+                        preguntaActualUpdated = PreguntaDND { preguntaDnD | respuestas = respuestasActualizadas } 
 
                         preguntasDict = Dict.insert model.idPreguntaActual preguntaActualUpdated model.preguntas
                     in
@@ -297,11 +330,7 @@ tieneRespuesta id preguntas =
                         ) p.parrafo
 
                 PreguntaDND p ->
-                    case p.respuestas of
-                        Just _ ->
-                            True
-                        Nothing ->
-                            False
+                    False
         Nothing ->
             False
             
@@ -321,7 +350,7 @@ view model =
             <| [ preguntaView, sliderView]
 
 
-viewPregunta : Int -> Pregunta -> DnDList.Model -> Element Msg
+viewPregunta : Int -> Pregunta -> DnDList.Groups.Model -> Element Msg
 viewPregunta idPregunta pregunta dnd =
     case pregunta of 
         PreguntaRU p -> 
@@ -413,103 +442,231 @@ viewRespuestasMRL pregunta =
             ) pregunta.parrafo
 
 
-viewPreguntaDragAndDrop : Int -> PreguntaDragAndDrop -> DnDList.Model ->  Element Msg
+viewPreguntaDragAndDrop : Int -> PreguntaDragAndDrop -> DnDList.Groups.Model ->  Element Msg
 viewPreguntaDragAndDrop idPregunta pregunta dnd =
-    el [centerY, centerX] 
-        <| column [spacing 10] 
-            <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.titulo)) 
-                , viewRespuestaDragAndDrop pregunta dnd
-                ]
+    let
+        -- Dividir la lista en dos partes
+        -- Especificar el índice donde deseas dividir la lista
+        indiceDeDivision = List.length pregunta.preguntas
+
+        listWithGlobalIndex = List.indexedMap Tuple.pair pregunta.respuestas
+
+        (answers, unanswered) =
+            List.take indiceDeDivision listWithGlobalIndex
+                |> Tuple.pair (List.drop indiceDeDivision listWithGlobalIndex)
+
+        answersArea = 
+            List.map2 (\p (globalIndex, answ) ->  row [paddingXY 5 5] [
+                text p
+            ,  Element.html <| itemView dnd pregunta.respuestas globalIndex answ
+            ]) pregunta.preguntas answers
+
+    in
+        el [centerY, centerX] 
+            <| column [spacing 10] 
+                <| [( el [padding 15, Font.alignLeft, Font.bold] <| text (toString idPregunta ++ ". " ++ pregunta.titulo)) ]
+                    ++ 
+                    [Element.column 
+                            []
+                            (answersArea ++
+                            [
+                                --  groupView dnd pregunta.respuestas Asignada lightRed
+                            -- , groupView dnd pregunta.respuestas NoAsignada lightBlue
+                            -- , 
+                            ghostView dnd pregunta.respuestas
+                            ])
+                            ]
+
+--    column [paddingXY 30 5, spacing 10] 
+--         <| List.indexedMap (\index p -> 
+--                 row [paddingXY 5 5] [text p
+--                 ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
+--                         Just match ->  
+--                             el [paddingXY 10 5] <| itemView dnd index match
+--                         Nothing ->
+--                             viewShadowPlaceholder
+--                 ]
+--             ) pregunta.preguntas
 
 
-viewRespuestaDragAndDrop : PreguntaDragAndDrop -> DnDList.Model -> Element Msg 
-viewRespuestaDragAndDrop pregunta dnd = 
-    column [paddingXY 30 5, spacing 10] 
-        <| List.indexedMap (\index p -> 
-                row [paddingXY 5 5] [text p
-                ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
-                        Just match ->  
-                            el [paddingXY 10 5] <| itemView dnd index match
-                        Nothing ->
-                            viewShadowPlaceholder
-                ]
-            ) pregunta.preguntas
-        ++ (sinMatchear pregunta.respuestas pregunta.opcionesResp
-            |> List.indexedMap (\index opcion -> 
-                row [paddingXY 5 5] [itemView dnd index opcion
-                ]
-            ))
+
+-- viewRespuestaDragAndDrop : PreguntaDragAndDrop -> DnDList.Model -> Element Msg 
+-- viewRespuestaDragAndDrop pregunta dnd = 
+--     column [paddingXY 30 5, spacing 10] 
+--         <| List.indexedMap (\index p -> 
+--                 row [paddingXY 5 5] [text p
+--                 ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
+--                         Just match ->  
+--                             el [paddingXY 10 5] <| itemView dnd index match
+--                         Nothing ->
+--                             viewShadowPlaceholder
+--                 ]
+--             ) pregunta.preguntas
+--         ++ (sinMatchear pregunta.respuestas pregunta.opcionesResp
+--             |> List.indexedMap (\index opcion -> 
+--                 row [paddingXY 5 5] [itemView dnd index opcion
+--                 ]
+--             ))
 
 
-itemView : DnDList.Model -> Int -> String -> Element Msg 
-itemView dnd index item =
+-- groupView : DnDList.Groups.Model -> List Item -> Group -> String -> Html.Html Msg
+-- groupView dnd items group color =
+--     items
+--         |> List.filter (\item -> item.group == group)
+--         |> List.indexedMap (itemView dnd items (calculateOffset 0 group items))
+--         |> Html.div (groupStyles color)
+
+
+itemView : DnDList.Groups.Model -> List Item -> Int -> Item -> Html.Html Msg
+itemView dnd items globalIndex { group, value, color } =
     let
         itemId : String
         itemId =
-            "id-" ++ item
+            "id-" ++ String.fromInt globalIndex
     in
-    case system.info dnd of
-        Just { dragIndex } ->
-            if dragIndex /= index then
-               Element.el
-                    (Element.Font.color (Element.rgb 1 1 1)
-                        :: Element.htmlAttribute (HAttrs.id itemId)
-                        :: List.map Element.htmlAttribute (system.dropEvents index itemId)
+    case ( system.info dnd, maybeDragItem dnd items ) of
+        ( Just { dragIndex }, Just dragItem ) ->
+            if color == transparent && value == "footer" && dragItem.group /= group then
+                Html.div
+                    (HAttrs.id itemId
+                        :: auxiliaryStyles
+                        ++ system.dropEvents globalIndex itemId
                     )
-                    (Element.text item)
+                    []
+
+            else if color == transparent && value == "footer" && dragItem.group == group then
+                Html.div
+                    (HAttrs.id itemId
+                        :: auxiliaryStyles
+                    )
+                    []
+
+            else if dragIndex /= globalIndex then
+                Html.div
+                    (HAttrs.id itemId
+                        :: itemStyles color
+                        ++ system.dropEvents globalIndex itemId
+                    )
+                    [ Html.text value ]
 
             else
-                viewShadowPlaceholder
-
-        Nothing ->
-            Element.el
-                    (Element.Font.color (Element.rgb 1 1 1)
-                        :: Element.htmlAttribute (HAttrs.id itemId)
-                        :: List.map Element.htmlAttribute (system.dropEvents index itemId)
+                Html.div
+                    (HAttrs.id itemId
+                        :: itemStyles gray
                     )
-                    (Element.text item)
+                    []
 
-viewShadowPlaceholder : Element msg
-viewShadowPlaceholder =
-    el [moveRight 4
-    , paddingXY 0 10
-    , width <| El.px 300
-    , Border.color gray80
-    , Border.solid
-    , Border.width 2
-    , Border.rounded 2
-    ] <| none    
+        _ ->
+            if color == transparent && value == "footer" then
+                Html.div
+                    (HAttrs.id itemId
+                        :: auxiliaryStyles
+                    )
+                    []
+
+            else
+                Html.div
+                    (HAttrs.id itemId
+                        :: itemStyles color
+                        ++ system.dragEvents globalIndex itemId
+                    )
+                    [ Html.text value ]
 
 
-obtenerMatch : Int -> Maybe (List (Int, Int)) -> List String -> Maybe String
-obtenerMatch idPregunta respuestas opcionesResp =  
-    case respuestas of 
-        Just respuestasList -> 
-            case List.filter (\(id, _) -> id == idPregunta) respuestasList of 
-                [(id, idRespuesta)] -> 
-                    Just <| String.join "" <| List.indexedMap (\index respuesta -> 
-                        if index == idRespuesta then 
-                            respuesta
-                        else 
-                            ""
-                        ) opcionesResp
-                _ -> 
-                    Nothing
-        Nothing -> 
-            Nothing
+ghostView : DnDList.Groups.Model -> List Item -> Element Msg
+ghostView dnd items =
+    case maybeDragItem dnd items of
+        Just { value, color } ->
+            el
+                (Element.Font.color (Element.rgb 1 1 1)
+                    :: List.map Element.htmlAttribute (system.ghostStyles dnd)
+                )
+                (text value)
+        Nothing ->
+            text ""
 
-sinMatchear : Maybe (List (Int, Int)) -> List String -> List String
-sinMatchear respuestas opcionesResp =  
-    case respuestas of 
-        Just respuestasList -> 
-                List.map (\(_, res) -> res )
-                <| List.filter (\(index, _) -> 
-                        not (List.any (\(_, idResp) -> idResp == index) respuestasList)
-                    ) 
-                <| List.indexedMap (\id res -> (id, res)) opcionesResp
-        Nothing -> 
-            opcionesResp
 
+
+
+calculateOffset : Int -> Group -> List Item -> Int
+calculateOffset index group list =
+    case list of
+        [] ->
+            0
+
+        x :: xs ->
+            if x.group == group then
+                index
+
+            else
+                calculateOffset (index + 1) group xs
+
+
+maybeDragItem : DnDList.Groups.Model -> List Item -> Maybe Item
+maybeDragItem dnd items =
+    system.info dnd
+        |> Maybe.andThen (\{ dragIndex } -> items |> List.drop dragIndex |> List.head)
+
+
+red : String
+red =
+    "#c30005"
+
+
+blue : String
+blue =
+    "#0067c3"
+
+
+lightRed : String
+lightRed =
+    "#ea9088"
+
+
+lightBlue : String
+lightBlue =
+    "#88b0ea"
+
+
+gray : String
+gray =
+    "dimgray"
+
+
+transparent : String
+transparent =
+    "transparent"
+
+
+
+itemStyles : String -> List (Html.Attribute msg)
+itemStyles color =
+    [ HAttrs.style "width" "5rem"
+    , HAttrs.style "height" "5rem"
+    , HAttrs.style "background-color" color
+    , HAttrs.style "border-radius" "8px"
+    , HAttrs.style "color" "#ffffff"
+    , HAttrs.style "cursor" "pointer"
+    , HAttrs.style "margin" "0 auto 1rem auto"
+    , HAttrs.style "display" "flex"
+    , HAttrs.style "align-items" "center"
+    , HAttrs.style "justify-content" "center"
+    ]
+
+
+{-| We can do much better with pseudo-classes.
+-}
+auxiliaryStyles : List (Html.Attribute msg)
+auxiliaryStyles =
+    [ HAttrs.style "flex-grow" "1"
+    , HAttrs.style "height" "auto"
+    , HAttrs.style "min-height" "1rem"
+    , HAttrs.style "width" "8rem"
+    ]
+
+
+
+-- Slider
 
 viewSlider : Model -> Element Msg
 viewSlider model =
