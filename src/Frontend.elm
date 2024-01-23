@@ -6,7 +6,7 @@ import Lamdera
 import Types exposing (..)
 import Url
 import Cuestionario as Cuestionario
-import Element as El exposing (Color, layout, explain, map)
+import Element as El exposing (layout, explain, map)
 import Element.Background as Background
 import Html.Attributes exposing (style)
 import Style exposing (..)

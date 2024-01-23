@@ -1,6 +1,6 @@
 module Style exposing (..)
 
-import Element as El exposing (Attribute, Color, rgb, rgba255)
+import Element as El exposing (Attribute, rgb, rgba255)
 import Element.Font as Font
 import Svg
 import Svg.Attributes as SvgAttrs
@@ -8,14 +8,23 @@ import Html
 import Element exposing (Element)
 import Element exposing (rgba)
 
+
 gray90 = rgb  0.1 0.1 0.1
 gray80 = rgb  0.2 0.2 0.2
 gray5 = rgb  0.95 0.95 0.95
 buttonSelectedColor = rgb 0.3 0.8 0.3
 blueGlowColor = darkBlueColor
-blueColor = rgba255 59 153 252 1
+blue = rgba255 59 153 252 1
 darkBlueColor = rgb 0.2 0.2 1.0
 greenColor = rgb 0.2 1.0 0.2
+transparent = rgba255 0 0 0 0
+
+
+debugGreen = rgb 0.333 0.949 0
+debugBlue = rgb 0 0.847 0.847
+debugOrange = rgb 1 0.455 0
+debugRed = rgb 0.973 0 0.208
+debugPurple = rgb 0.898 0 0.788
 
 
 brandFontAttrs : List (Attribute msg)

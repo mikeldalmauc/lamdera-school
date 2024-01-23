@@ -5,13 +5,11 @@ import Browser.Navigation exposing (Key)
 import Url exposing (Url)
 import Cuestionario
 
-
 type alias FrontendModel =
     { key : Key
     , message : String
     , cuestionario : Cuestionario.Model
     }
-
 
 type alias BackendModel =
     { message : String

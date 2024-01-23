@@ -3,29 +3,19 @@ module Cuestionario exposing (..)
 
 import Browser.Dom exposing (Element)
 
-import Element as El exposing (Element, el, text, row, width, height, spacing, centerY, padding, column, row)
+import Element exposing (Element, el, text, row, width, height, spacing, centerY, padding, column, row, none, paddingXY, centerX, moveRight, moveLeft)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element exposing (centerX)
 import Dict exposing (Dict)
 import Debug exposing (toString)
-import Element exposing (paddingXY)
 import Element.Input as Input
 
 import Style exposing (..)
 
 import Html.Attributes as HAttrs
-import Html exposing (col)
-import Element.Font exposing (justify)
-import Html exposing (pre)
-import DnDList
 import DnDList.Groups
-
-import Element exposing (none)
-import Element exposing (moveLeft)
-import Element exposing (moveRight)
-import List exposing (indexedMap)
 
 type alias Preguntas = Dict Int Pregunta
 
@@ -64,11 +54,9 @@ type Group
     | Asignada
     | Empty
 
-
 type alias Item =
     { group : Group
     , value : String
-    , color : String
     }
 
 
@@ -106,12 +94,14 @@ init =
                 ,   PreguntaMRL { titulo = "Completa el texto" , parrafo = [Texto "Pregunta MRsL 1 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 2 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 3 ", HuecoRespuesta Nothing]}
                 ,   PreguntaDND { titulo = "Arrastra las opciones a su lugar correcto", preguntas = ["El pez es ", "El pajaro ", "El oso "], 
                         respuestas = [
-                          Item Empty ""  gray
-                        , Item Empty "" gray
-                        , Item Empty "" gray
-                        , Item NoAsignada "de color rojo." red
-                        , Item NoAsignada "vuela." red
-                        , Item NoAsignada "come miel." red]}
+                          Item Empty "" 
+                        , Item Empty ""
+                        , Item Empty ""
+                        , Item NoAsignada "de color rojo."
+                        , Item NoAsignada "vuela."
+                        , Item NoAsignada "come miel."
+                        , Item Asignada "de color sssss."
+                        ]}
                 ]
                 ++ (List.range 4 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
     ,   dnd = system.model
@@ -425,7 +415,7 @@ viewPreguntaMultiRespuestaLibre idPregunta pregunta =
                 
 viewRespuestasMRL : PreguntaMultiRespuestaLibre -> Element Msg
 viewRespuestasMRL pregunta = 
-    El.paragraph [] <| 
+    Element.paragraph [] <| 
         List.indexedMap (\ index section -> 
             case section of 
                 Texto t -> 
@@ -458,8 +448,14 @@ viewPreguntaDragAndDrop idPregunta pregunta dnd =
         answersArea = 
             List.map2 (\p (globalIndex, answ) ->  row [paddingXY 5 5] [
                 text p
-            ,  Element.html <| itemView dnd pregunta.respuestas globalIndex answ
+            ,  itemView dnd pregunta.respuestas globalIndex answ
             ]) pregunta.preguntas answers
+
+        unansweredArea = 
+            List.map (\(globalIndex, answ) ->  row [paddingXY 5 5] [itemView dnd pregunta.respuestas globalIndex answ]
+            ) unanswered
+
+            
 
     in
         el [centerY, centerX] 
@@ -468,7 +464,7 @@ viewPreguntaDragAndDrop idPregunta pregunta dnd =
                     ++ 
                     [Element.column 
                             []
-                            (answersArea ++
+                            (answersArea ++ unansweredArea ++
                             [
                                 --  groupView dnd pregunta.respuestas Asignada lightRed
                             -- , groupView dnd pregunta.respuestas NoAsignada lightBlue
@@ -516,90 +512,88 @@ viewPreguntaDragAndDrop idPregunta pregunta dnd =
 --         |> List.indexedMap (itemView dnd items (calculateOffset 0 group items))
 --         |> Html.div (groupStyles color)
 
+itemStyle : String -> List (Element.Attribute Msg)
+itemStyle itemId =
+    [Element.htmlAttribute (HAttrs.id itemId)
+    , Font.color gray5
+    , Background.color debugPurple
+    ]
 
-itemView : DnDList.Groups.Model -> List Item -> Int -> Item -> Html.Html Msg
-itemView dnd items globalIndex { group, value, color } =
+itemView : DnDList.Groups.Model -> List Item -> Int -> Item -> Element Msg
+itemView dnd items globalIndex { group, value } =
     let
         itemId : String
         itemId =
             "id-" ++ String.fromInt globalIndex
+
+        style = itemStyle itemId
     in
     case ( system.info dnd, maybeDragItem dnd items ) of
+        -- Casos que se dan cuando hay un arrastramiento en curso
         ( Just { dragIndex }, Just dragItem ) ->
-            if color == transparent && value == "footer" && dragItem.group /= group then
-                Html.div
-                    (HAttrs.id itemId
-                        :: auxiliaryStyles
-                        ++ system.dropEvents globalIndex itemId
+            -- Este caso se da cuando un elemento es vacio y 
+            if group == Empty && dragItem.group /= group then
+                el
+                    (style ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
                     )
-                    []
+                    (text "debug 3")
 
-            else if color == transparent && value == "footer" && dragItem.group == group then
-                Html.div
-                    (HAttrs.id itemId
-                        :: auxiliaryStyles
+            -- Este caso se da cuando un elemento se coloca encima de otro
+            else if group == Empty && dragItem.group == group then
+                 el
+                    (style
                     )
-                    []
+                    (text "debug 2")
 
+            -- Este caso representa a los elementos que no están siendo arrastrados ( mientras otro si lo está)
             else if dragIndex /= globalIndex then
-                Html.div
-                    (HAttrs.id itemId
-                        :: itemStyles color
-                        ++ system.dropEvents globalIndex itemId
-                    )
-                    [ Html.text value ]
+                el
+                (style
+                    ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
+                )
+                (text value)
 
+            -- Este caso representa al hueco que deja el elemento que está siendo arrastrado
             else
-                Html.div
-                    (HAttrs.id itemId
-                        :: itemStyles gray
+                el
+                    (style
                     )
-                    []
+                    (text "debug 4")
 
         _ ->
-            if color == transparent && value == "footer" then
-                Html.div
-                    (HAttrs.id itemId
-                        :: auxiliaryStyles
+            if group == Empty then
+                el
+                    (style
                     )
-                    []
+                    none
 
             else
-                Html.div
-                    (HAttrs.id itemId
-                        :: itemStyles color
-                        ++ system.dragEvents globalIndex itemId
+                el
+                    (
+                        Element.pointer
+                        :: style
+                        ++ List.map Element.htmlAttribute (system.dragEvents globalIndex itemId)
                     )
-                    [ Html.text value ]
+                    (text value)
 
 
 ghostView : DnDList.Groups.Model -> List Item -> Element Msg
 ghostView dnd items =
     case maybeDragItem dnd items of
-        Just { value, color } ->
+        -- Este caso es un placeholder para el elemnto que va aser arrastrado
+        Just { group, value} ->
             el
-                (Element.Font.color (Element.rgb 1 1 1)
-                    :: List.map Element.htmlAttribute (system.ghostStyles dnd)
+                ( itemStyle "ghost" ++ List.map Element.htmlAttribute (system.ghostStyles dnd)
                 )
                 (text value)
+        -- Este caso es un placeholder para el elemnto que va aser arrastrado, no debería verse si no hay un elemento arrastrandose
         Nothing ->
-            text ""
+             el
+                (List.map Element.htmlAttribute (system.ghostStyles dnd)
+                    ++ itemStyle "ghost"
+                )
+                (text "debug")
 
-
-
-
-calculateOffset : Int -> Group -> List Item -> Int
-calculateOffset index group list =
-    case list of
-        [] ->
-            0
-
-        x :: xs ->
-            if x.group == group then
-                index
-
-            else
-                calculateOffset (index + 1) group xs
 
 
 maybeDragItem : DnDList.Groups.Model -> List Item -> Maybe Item
@@ -608,61 +602,6 @@ maybeDragItem dnd items =
         |> Maybe.andThen (\{ dragIndex } -> items |> List.drop dragIndex |> List.head)
 
 
-red : String
-red =
-    "#c30005"
-
-
-blue : String
-blue =
-    "#0067c3"
-
-
-lightRed : String
-lightRed =
-    "#ea9088"
-
-
-lightBlue : String
-lightBlue =
-    "#88b0ea"
-
-
-gray : String
-gray =
-    "dimgray"
-
-
-transparent : String
-transparent =
-    "transparent"
-
-
-
-itemStyles : String -> List (Html.Attribute msg)
-itemStyles color =
-    [ HAttrs.style "width" "5rem"
-    , HAttrs.style "height" "5rem"
-    , HAttrs.style "background-color" color
-    , HAttrs.style "border-radius" "8px"
-    , HAttrs.style "color" "#ffffff"
-    , HAttrs.style "cursor" "pointer"
-    , HAttrs.style "margin" "0 auto 1rem auto"
-    , HAttrs.style "display" "flex"
-    , HAttrs.style "align-items" "center"
-    , HAttrs.style "justify-content" "center"
-    ]
-
-
-{-| We can do much better with pseudo-classes.
--}
-auxiliaryStyles : List (Html.Attribute msg)
-auxiliaryStyles =
-    [ HAttrs.style "flex-grow" "1"
-    , HAttrs.style "height" "auto"
-    , HAttrs.style "min-height" "1rem"
-    , HAttrs.style "width" "8rem"
-    ]
 
 
 
@@ -673,12 +612,12 @@ viewSlider model =
     let
         arrowStyle = [ 
               padding 0
-            , El.pointer ]
+            , Element.pointer ]
         buttonStyle = [ 
                 padding 8
-            , width <| El.px 28
-            , El.pointer
-            , El.mouseOver [Font.color darkBlueColor] ]
+            , width <| Element.px 28
+            , Element.pointer
+            , Element.mouseOver [Font.color darkBlueColor] ]
 
         anterior = Input.button
             arrowStyle
@@ -689,7 +628,7 @@ viewSlider model =
         siguiente = Input.button
             arrowStyle
             { onPress = Just SiguientePregunta
-            , label = el [El.htmlAttribute <| HAttrs.attribute "style" "transform: rotate(180deg);"] <| Style.arrow 24
+            , label = el [Element.htmlAttribute <| HAttrs.attribute "style" "transform: rotate(180deg);"] <| Style.arrow 24
             }
 
         primera = Input.button
@@ -701,7 +640,7 @@ viewSlider model =
         ultima = Input.button
             arrowStyle
             { onPress = Just UltimaPregunta
-            , label = el [El.htmlAttribute <| HAttrs.attribute "style" "transform: rotate(180deg);"] <| Style.doubleArrow 24
+            , label = el [Element.htmlAttribute <| HAttrs.attribute "style" "transform: rotate(180deg);"] <| Style.doubleArrow 24
             }
 
         dictSize = Dict.size model.preguntas
@@ -709,17 +648,17 @@ viewSlider model =
         (firstIndex, lastIndex) = surroundingIndices dictSize model.idPreguntaActual
         
         estiloMarcador = \index -> 
-                    (if index == model.idPreguntaActual then [Background.color blueColor] else [Background.color gray80])
+                    (if index == model.idPreguntaActual then [Background.color blue] else [Background.color gray80])
                 ++
                 [ Border.width 0, Border.color gray5, Border.rounded 3
                 , Font.size 10, Font.bold, Font.center
-                , width <| El.px 23
+                , width <| Element.px 23
                 ] ++ buttonStyle
 
         label = \index -> 
             column [Font.center, centerY, centerX, spacing 3] [el [centerX] <| text <| toString index
-                , el [centerX, Border.rounded 2, width <| El.px 12, height <| El.px 3
-                    , Background.color (if tieneRespuesta index model.preguntas then greenColor else gray90)] El.none]
+                , el [centerX, Border.rounded 2, width <| Element.px 12, height <| Element.px 3
+                    , Background.color (if tieneRespuesta index model.preguntas then greenColor else gray90)] Element.none]
 
         indices = 
             List.map (\index -> 
