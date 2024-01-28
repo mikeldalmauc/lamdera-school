@@ -52,10 +52,12 @@ type alias PreguntaDragAndDrop = {
 type Group
     = NoAsignada
     | Asignada
-    | Empty
+
+type Category = Empty | Answer
 
 type alias Item =
-    { group : Group
+    { category : Category
+    , group : Group
     , value : String
     }
 
@@ -94,13 +96,13 @@ init =
                 ,   PreguntaMRL { titulo = "Completa el texto" , parrafo = [Texto "Pregunta MRsL 1 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 2 ", HuecoRespuesta Nothing, Texto ". Pregunta MRL 3 ", HuecoRespuesta Nothing]}
                 ,   PreguntaDND { titulo = "Arrastra las opciones a su lugar correcto", preguntas = ["El pez es ", "El pajaro ", "El oso "], 
                         respuestas = [
-                          Item Empty "" 
-                        , Item Empty ""
-                        , Item Empty ""
-                        , Item NoAsignada "de color rojo."
-                        , Item NoAsignada "vuela."
-                        , Item NoAsignada "come miel."
-                        , Item Asignada "de color sssss."
+                          Item Empty Asignada "vacio" 
+                        , Item Empty Asignada "vacio"
+                        , Item Empty Asignada "vacio"
+                        , Item Answer NoAsignada "de color rojo."
+                        , Item Answer NoAsignada "vuela."
+                        , Item Answer NoAsignada "come miel."
+                        , Item Answer Asignada "de color sssss."
                         ]}
                 ]
                 ++ (List.range 4 120 |> List.map (\index -> (index, PreguntaRU { pregunta = "Pregunta " ++ toString index, opcionesResp = ["Respuesta 1", "Respuesta 2", "Respuesta 3"], respuesta = Nothing })))
@@ -114,9 +116,9 @@ config : DnDList.Groups.Config Item
 config =
     { beforeUpdate = \_ _ list -> list
     , listen = DnDList.Groups.OnDrag
-    , operation = DnDList.Groups.Unaltered
+    , operation = DnDList.Groups.Swap
     , groups =
-        { listen = DnDList.Groups.OnDrag
+        { listen = DnDList.Groups.OnDrop
         , operation = DnDList.Groups.Swap
         , comparator = comparator
         , setter = setter
@@ -134,7 +136,7 @@ comparator item1 item2 =
 
 
 setter : Item -> Item -> Item
-setter item1 item2 =
+setter item1 item2 = 
     { item2 | group = item1.group }
 
 
@@ -320,11 +322,17 @@ tieneRespuesta id preguntas =
                         ) p.parrafo
 
                 PreguntaDND p ->
-                    False
+                    List.any (\item -> 
+                        case (item.group, item.category) of 
+                            (Asignada, Answer) -> 
+                                True
+                            _ -> 
+                                False
+                        ) 
+                    <| List.take (List.length p.preguntas) p.respuestas
         Nothing ->
             False
             
-
 
 -- VIEW
 
@@ -442,8 +450,7 @@ viewPreguntaDragAndDrop idPregunta pregunta dnd =
         listWithGlobalIndex = List.indexedMap Tuple.pair pregunta.respuestas
 
         (answers, unanswered) =
-            List.take indiceDeDivision listWithGlobalIndex
-                |> Tuple.pair (List.drop indiceDeDivision listWithGlobalIndex)
+                Tuple.pair (List.take indiceDeDivision listWithGlobalIndex) (List.drop indiceDeDivision listWithGlobalIndex) 
 
         answersArea = 
             List.map2 (\p (globalIndex, answ) ->  row [paddingXY 5 5] [
@@ -466,51 +473,9 @@ viewPreguntaDragAndDrop idPregunta pregunta dnd =
                             []
                             (answersArea ++ unansweredArea ++
                             [
-                                --  groupView dnd pregunta.respuestas Asignada lightRed
-                            -- , groupView dnd pregunta.respuestas NoAsignada lightBlue
-                            -- , 
                             ghostView dnd pregunta.respuestas
                             ])
                             ]
-
---    column [paddingXY 30 5, spacing 10] 
---         <| List.indexedMap (\index p -> 
---                 row [paddingXY 5 5] [text p
---                 ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
---                         Just match ->  
---                             el [paddingXY 10 5] <| itemView dnd index match
---                         Nothing ->
---                             viewShadowPlaceholder
---                 ]
---             ) pregunta.preguntas
-
-
-
--- viewRespuestaDragAndDrop : PreguntaDragAndDrop -> DnDList.Model -> Element Msg 
--- viewRespuestaDragAndDrop pregunta dnd = 
---     column [paddingXY 30 5, spacing 10] 
---         <| List.indexedMap (\index p -> 
---                 row [paddingXY 5 5] [text p
---                 ,   case obtenerMatch index pregunta.respuestas pregunta.opcionesResp of
---                         Just match ->  
---                             el [paddingXY 10 5] <| itemView dnd index match
---                         Nothing ->
---                             viewShadowPlaceholder
---                 ]
---             ) pregunta.preguntas
---         ++ (sinMatchear pregunta.respuestas pregunta.opcionesResp
---             |> List.indexedMap (\index opcion -> 
---                 row [paddingXY 5 5] [itemView dnd index opcion
---                 ]
---             ))
-
-
--- groupView : DnDList.Groups.Model -> List Item -> Group -> String -> Html.Html Msg
--- groupView dnd items group color =
---     items
---         |> List.filter (\item -> item.group == group)
---         |> List.indexedMap (itemView dnd items (calculateOffset 0 group items))
---         |> Html.div (groupStyles color)
 
 itemStyle : String -> List (Element.Attribute Msg)
 itemStyle itemId =
@@ -520,40 +485,52 @@ itemStyle itemId =
     ]
 
 itemView : DnDList.Groups.Model -> List Item -> Int -> Item -> Element Msg
-itemView dnd items globalIndex { group, value } =
+itemView dnd items globalIndex {category, group, value } =
     let
         itemId : String
         itemId =
             "id-" ++ String.fromInt globalIndex
 
-        style = itemStyle itemId
+        style = case category of
+            Empty ->
+                itemStyle itemId
+                ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
+            _ ->
+                List.map Element.htmlAttribute (system.dragEvents globalIndex itemId)
+                ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
+                ++ itemStyle itemId
+        
     in
     case ( system.info dnd, maybeDragItem dnd items ) of
         -- Casos que se dan cuando hay un arrastramiento en curso
         ( Just { dragIndex }, Just dragItem ) ->
+
             -- Este caso se da cuando un elemento es vacio y 
-            if group == Empty && dragItem.group /= group then
-                el
-                    (style ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
-                    )
-                    (text "debug 3")
+            -- if group == NoAsignada && dragItem.group /= group then
+            --     el
+            --         (style
+            --         --  ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
+            --         )
+            --         (text value)
 
-            -- Este caso se da cuando un elemento se coloca encima de otro
-            else if group == Empty && dragItem.group == group then
-                 el
-                    (style
-                    )
-                    (text "debug 2")
+            -- -- Este caso se da cuando un elemento se coloca encima de otro
+            -- else if group == NoAsignada && dragItem.group == group then
+            --      el
+            --         (style
+            --         )
+            --         (text value)
 
-            -- Este caso representa a los elementos que no están siendo arrastrados ( mientras otro si lo está)
-            else if dragIndex /= globalIndex then
+            -- -- Este caso representa a los elementos que no están siendo arrastrados ( mientras otro si lo está)
+            -- else 
+            
+            if dragIndex /= globalIndex then
                 el
                 (style
-                    ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
+                    -- ++ List.map Element.htmlAttribute (system.dropEvents globalIndex itemId)
                 )
-                (text value)
+                (text "debug 3")
 
-            -- Este caso representa al hueco que deja el elemento que está siendo arrastrado
+            -- Este caso representa al hueco al que el elemento que está siendo arrastrado va a posicionarse
             else
                 el
                     (style
@@ -561,18 +538,18 @@ itemView dnd items globalIndex { group, value } =
                     (text "debug 4")
 
         _ ->
-            if group == Empty then
+            if group == NoAsignada then
                 el
                     (style
                     )
-                    none
+                    (text value)
 
             else
                 el
                     (
                         Element.pointer
                         :: style
-                        ++ List.map Element.htmlAttribute (system.dragEvents globalIndex itemId)
+                        -- ++ List.map Element.htmlAttribute (system.dragEvents globalIndex itemId)
                     )
                     (text value)
 
@@ -592,7 +569,7 @@ ghostView dnd items =
                 (List.map Element.htmlAttribute (system.ghostStyles dnd)
                     ++ itemStyle "ghost"
                 )
-                (text "debug")
+                (text "shadow debug")
 
 
 
