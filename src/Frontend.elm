@@ -41,8 +41,12 @@ init url key =
 
 subscriptions : Model -> Sub FrontendMsg
 subscriptions model =
-    Sub.map CuestionarioMsg (Cuestionario.subscriptions model.cuestionario)
-
+    Sub.batch[
+        CuestionarioMsg (Cuestionario.subscriptions model.cuestionario)
+        , onResize 
+            (\width height ->
+                DeviceClassified { width = width, height = height })
+    ]
 
 update : FrontendMsg -> Model -> ( Model, Cmd FrontendMsg )
 update msg model =
@@ -61,6 +65,9 @@ update msg model =
 
         UrlChanged url ->
             ( model, Cmd.none )
+
+        DeviceClassified flags ->
+                ( { model | device = (Element.classifyDevice flags), dimensions = flags } , Cmd.none)
 
         NoOpFrontendMsg ->
             ( model, Cmd.none )

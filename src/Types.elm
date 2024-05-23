@@ -7,8 +7,14 @@ import Cuestionario
 
 type alias FrontendModel =
     { key : Key
+    , device : Device
+    , dimensions : Flags
     , message : String
     , cuestionario : Cuestionario.Model
+    }
+type alias Flags =
+    { width : Int
+    , height : Int
     }
 
 type alias BackendModel =
@@ -21,7 +27,7 @@ type FrontendMsg
     | UrlChanged Url
     | CuestionarioMsg Cuestionario.Msg
     | NoOpFrontendMsg
-
+    | DeviceClassified Flags
 
 type ToBackend
     = NoOpToBackend

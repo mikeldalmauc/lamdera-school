@@ -3,7 +3,7 @@ module Cuestionario exposing (..)
 
 import Browser.Dom exposing (Element)
 
-import Element exposing (Element, el, text, row, width, height, spacing, centerY, padding, column, row, none, paddingXY, centerX, moveRight, moveLeft)
+import Element exposing (Element, fill, maximum, minimum, el, text, row, width, height, spacing, centerY, padding, column, row, none, paddingXY, centerX, moveRight, moveLeft)
 import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
@@ -344,8 +344,23 @@ view model =
         sliderView =  viewSlider model
         
     in
-        column [centerY, centerX, spacing 30] 
-            <| [ preguntaView, sliderView]
+        row [centerX, centerY] 
+            [ el [width fill, height fill] none
+            , column [centerY, centerX, spacing 30
+                , height
+                    (fill
+                        |> maximum 300
+                        |> minimum 30
+                    )
+                , width
+                    (fill
+                        |> maximum 300
+                        |> minimum 30
+                    )
+                ] 
+                [ preguntaView, sliderView]
+            , none
+            ]
 
 
 viewPregunta : Int -> Pregunta -> DnDList.Groups.Model -> Element Msg
